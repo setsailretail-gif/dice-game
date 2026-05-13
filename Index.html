@@ -1,100 +1,360 @@
-const express = require('express');
-const Stripe = require('stripe');
-const { v4: uuidv4 } = require('uuid');
-const app = express();
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dice Roll Mania</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            background: #2d2d2d;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            text-align: center;
+            max-width: 450px;
+            width: 100%;
+        }
+        h1 { color: #4285F4; margin-top: 0; }
+        .ledger {
+            display: flex;
+            justify-content: space-around;
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            font-size: 1.1em;
+        }
+        .balance-val { color: #34A853; font-weight: bold; }
+        .dice-area {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin: 25px 0;
+            height: 80px;
+        }
+        .die {
+            width: 80px;
+            height: 80px;
+            background-color: #000000;
+            border: 3px solid #333;
+            border-radius: 12px;
+            position: relative;
+            box-shadow: inset 0 0 10px rgba(255,255,255,0.1), 0 4px 8px rgba(0,0,0,0.4);
+            transition: transform 0.1s ease;
+        }
+        .dot {
+            width: 14px;
+            height: 14px;
+            background-color: #FF0000; 
+            border-radius: 50%;
+            position: absolute;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.6);
+        }
+        .d1 { top: 50%; left: 50%; }
+        .d2 { top: 25%; left: 25%; }
+        .d3 { top: 75%; left: 75%; }
+        .d4 { top: 25%; left: 75%; }
+        .d5 { top: 75%; left: 25%; }
+        .d6 { top: 50%; left: 25%; }
+        .d7 { top: 50%; left: 75%; }
 
-// Stripe keys will be securely pulled from your hosting dashboard settings
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
-const DOMAIN = 'run.place'; 
+        .btn {
+            background: #4285F4;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1em;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 10px;
+            transition: background 0.2s;
+        }
+        .btn:hover { background: #357ae8; }
+        .btn:disabled { background: #555; cursor: not-allowed; }
+        #gpay-container {
+            margin-top: 15px;
+            display: flex;
+            justify-content: center;
+        }
+        .log {
+            margin-top: 15px;
+            font-size: 0.95em;
+            color: #ffc107;
+            min-height: 22px;
+        }
+        .rules {
+            font-size: 0.8em;
+            color: #aaa;
+            text-align: left;
+            margin-top: 20px;
+            border-top: 1px solid #444;
+            padding-top: 15px;
+        }
+        .provider-banner {
+            margin-top: 25px;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+        }
+        .provider-banner:hover {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
 
-app.use(express.json());
+<div class="container">
+    <h1>🎲 Lucky Dice</h1>
+    
+    <div class="ledger">
+        <div>Game Wallet: <span id="wallet-balance" class="balance-val">$0.00</span></div>
+    </div>
 
-// 1. THE FRONTEND HOME PAGE (HTML UI)
-app.get('/', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Set Sail Retail - Dice Game</title>
-        <style>
-            body { font-family: Arial; text-align: center; padding: 50px; background: #f4f7f6; }
-            .card { background: white; padding: 30px; border-radius: 8px; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-            button { background: #28a745; color: white; border: none; padding: 12px 24px; font-size: 18px; border-radius: 4px; cursor: pointer; }
-        </style>
-    </head>
-    <body>
-        <div class="card"><a href="http://dnsexit.com"><img src="http://dnsexit.com/images/dns.gif" border=0></a>
-            <h1>Set Sail Retail Dice Game</h1>
-            <p>Cost to play: $1.00</p>
-            <p>Roll a <b>6</b> to get a full refund plus $0.10 profit ($1.10 total)!</p>
-            
-            <form action="/create-checkout-session" method="POST">
-                <button type="submit">Purchase & Roll Dice</button>
-            </form>
-            
-            <h2 id="msg"></h2>
-        </div>
-        <script>
-            const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('result') === 'win') {
-                document.getElementById('msg').innerText = "🎲 You rolled a 6! You WON! Check your balance.";
-                document.getElementById('msg').style.color = "green";
-            } else if (urlParams.get('result') === 'lose') {
-                document.getElementById('msg').innerText = "🎲 You rolled a losing number. Try again!";
-                document.getElementById('msg').style.color = "red";
-            }
-        </script>
-    </body>
-    </html>
-  `);
-});
+    <div class="dice-area">
+        <div id="die1" class="die"></div>
+        <div id="die2" class="die"></div>
+    </div>
 
-// 2. STRIPE CHECKOUT ROUTE (When they click the button)
-app.post('/create-checkout-session', async (req, res) => {
-  try {
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [{
-        price_data: {
-          currency: 'usd',
-          product_data: { name: 'Set Sail Retail Dice Roll Purchase' },
-          unit_amount: 100, // $1.00 in cents
-        },
-        quantity: 1,
-      }],
-      mode: 'payment',
-      // The game determines the win/loss after they pay
-      success_url: `${DOMAIN}/process-game?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${DOMAIN}?payment=canceled`,
+    <button id="roll-btn" class="btn" onclick="rollDice()" disabled>Roll Dice (Costs $0.02)</button>
+    <button id="cashout-btn" class="btn" style="background:#34A853;" onclick="cashOut()" disabled>Cash Out to Google Pay</button>
+    
+    <div id="gpay-container"></div>
+
+    <div id="status-log" class="log">Buy $1.00 credit using Google Pay to play!</div>
+
+    <div class="rules">
+        <strong>Rules:</strong><br>
+        • Entry: Pay $1.00 via Google Pay to get started.<br>
+        • Cost per roll: 2 pennies ($0.02).<br>
+        • Snake Eyes (1,1): Lose 1 penny ($0.01).<br>
+        • Roll a 7: Win 7 pennies ($0.07).<br>
+        • Roll an 11: Win 11 pennies ($0.11).<br>
+        • Any other outcome: Win 1 penny ($0.01).
+    </div>
+
+    <!-- Integrated DNSExit Verification Tracking Banner -->
+    <div class="provider-banner">
+        <a href="http://dnsexit.com"><img src="dnsexit.com" border="0" alt="Free DNS Tracking"></a>
+    </div>
+</div>
+
+<script>
+let balance = 0.00;
+const rollCost = 0.02;
+
+function renderDie(elementId, value) {
+    const die = document.getElementById(elementId);
+    die.innerHTML = '';
+    const dotPositions = {
+        1: ['d1'],
+        2: ['d2', 'd3'],
+        3: ['d1', 'd2', 'd3'],
+        4: ['d2', 'd3', 'd4', 'd5'],
+        5: ['d1', 'd2', 'd3', 'd4', 'd5'],
+        6: ['d2', 'd3', 'd4', 'd5', 'd6', 'd7']
+    };
+    dotPositions[value].forEach(pos => {
+        const dot = document.createElement('div');
+        dot.className = `dot ${pos}`;
+        die.appendChild(dot);
     });
-    res.redirect(303, session.url);
-  } catch (err) {
-    res.status(500).send("Stripe error: " + err.message);
-  }
-});
+}
 
-// 3. SECURE DICE ROLL GAME LOGIC
-app.get('/process-game', async (req, res) => {
-  const { session_id } = req.query;
-  try {
-    const session = await stripe.checkout.sessions.retrieve(session_id);
-    if (session.payment_status === 'paid') {
-      
-      // Execute the random dice roll securely on the server side
-      const roll = Math.floor(Math.random() * 6) + 1;
-      
-      if (roll === 6) {
-        // Issue $1.10 transfer or balance credit here via Stripe API
-        return res.redirect('/?result=win');
-      } else {
-        return res.redirect('/?result=lose');
-      }
+renderDie('die1', 3);
+renderDie('die2', 4);
+
+function updateUI() {
+    document.getElementById('wallet-balance').innerText = `$${balance.toFixed(2)}`;
+    document.getElementById('roll-btn').disabled = balance < rollCost;
+    document.getElementById('cashout-btn').disabled = balance <= 0;
+}
+
+function playDiceSound() {
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioContext();
+        
+        let time = ctx.currentTime;
+        for (let i = 0; i < 6; i++) {
+            let osc = ctx.createOscillator();
+            let gain = ctx.createGain();
+            
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(80 + Math.random() * 60, time);
+            osc.frequency.exponentialRampToValueAtTime(30, time + 0.08);
+            
+            gain.gain.setValueAtTime(0.3, time);
+            gain.gain.exponentialRampToValueAtTime(0.01, time + 0.08);
+            
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            
+            osc.start(time);
+            osc.stop(time + 0.08);
+            time += 0.05 + Math.random() * 0.04;
+        }
+    } catch(e) { console.log("Audio context blocked or unsupported"); }
+}
+
+function rollDice() {
+    if (balance < rollCost) return;
+    
+    balance -= rollCost;
+    updateUI();
+    playDiceSound();
+
+    let ticks = 0;
+    const log = document.getElementById('status-log');
+    log.innerText = "Rolling...";
+
+    const interval = setInterval(() => {
+        const d1 = Math.floor(Math.random() * 6) + 1;
+        const d2 = Math.floor(Math.random() * 6) + 1;
+        renderDie('die1', d1);
+        renderDie('die2', d2);
+        
+        document.getElementById('die1').style.transform = `rotate(${Math.random()*20 - 10}deg) scale(0.95)`;
+        document.getElementById('die2').style.transform = `rotate(${Math.random()*20 - 10}deg) scale(0.95)`;
+        
+        ticks++;
+        if (ticks > 10) {
+            clearInterval(interval);
+            document.getElementById('die1').style.transform = 'none';
+            document.getElementById('die2').style.transform = 'none';
+            evaluateRoll(d1, d2);
+        }
+    }, 80);
+}
+
+function evaluateRoll(d1, d2) {
+    const total = d1 + d2;
+    const log = document.getElementById('status-log');
+    
+    if (d1 === 1 && d2 === 1) {
+        balance -= 0.01;
+        log.innerText = "Snake Eyes! You lost 1 penny.";
+    } else if (total === 7) {
+        balance += 0.07;
+        log.innerText = "Lucky 7! You won 7 pennies.";
+    } else if (total === 11) {
+        balance += 0.11;
+        log.innerText = "Yo-leven! You won 11 pennies.";
+    } else {
+        balance += 0.01;
+        log.innerText = `Rolled a ${total}. You won 1 penny.`;
     }
-    res.redirect('/');
-  } catch (err) {
-    res.send("Error processing game.");
-  }
-});
+    updateUI();
+}
 
-app.listen(80, () => console.log('Server running on port 80'));
+function cashOut() {
+    alert(`Cashing out $${balance.toFixed(2)} to your Google Pay connected destination account!`);
+    balance = 0.00;
+    updateUI();
+    document.getElementById('status-log').innerText = "Successfully cashed out!";
+}
+
+const baseRequest = {
+  apiVersion: 2,
+  apiVersionMinor: 0
+};
+
+const tokenizationSpecification = {
+  type: 'PAYMENT_GATEWAY',
+  parameters: {
+    'gateway': 'example',
+    'gatewayMerchantId': 'exampleGatewayMerchantId'
+  }
+};
+
+const allowedCardNetworks = ["AMEX", "DISCOVER", "INTERAC", "JCB", "MASTERCARD", "VISA"];
+const allowedCardAuthMethods = ["PAN_ONLY", "CRYPTOGRAM_3DS"];
+
+const baseCardPaymentMethod = {
+  type: 'CARD',
+  parameters: {
+    allowedAuthMethods: allowedCardAuthMethods,
+    allowedCardNetworks: allowedCardNetworks
+  }
+};
+
+const cardPaymentMethod = Object.assign(
+  {},
+  baseCardPaymentMethod,
+  {
+    tokenizationSpecification: tokenizationSpecification
+  }
+);
+
+let paymentsClient = null;
+
+function getGooglePaymentsClient() {
+  if (paymentsClient === null) {
+    paymentsClient = new google.payments.api.PaymentsClient({environment: 'TEST'});
+  }
+  return paymentsClient;
+}
+
+function onGooglePayLoaded() {
+  const paymentsClient = getGooglePaymentsClient();
+  const isReadyToPayRequest = Object.assign({}, baseRequest);
+  isReadyToPayRequest.allowedPaymentMethods = [baseCardPaymentMethod];
+
+  paymentsClient.isReadyToPay(isReadyToPayRequest)
+    .then(function(response) {
+      if (response.result) {
+        addGooglePayButton();
+      }
+    })
+    .catch(function(err) { console.error(err); });
+}
+
+function addGooglePayButton() {
+  const paymentsClient = getGooglePaymentsClient();
+  const button = paymentsClient.createButton({
+    buttonColor: 'default',
+    buttonType: 'buy',
+    onClick: onGooglePaymentButtonClicked
+  });
+  document.getElementById('gpay-container').appendChild(button);
+}
+
+function onGooglePaymentButtonClicked() {
+  const paymentDataRequest = Object.assign({}, baseRequest);
+  paymentDataRequest.allowedPaymentMethods = [cardPaymentMethod];
+  paymentDataRequest.transactionInfo = {
+    totalPriceStatus: 'FINAL',
+    totalPrice: '1.00',
+    currencyCode: 'USD'
+  };
+  paymentDataRequest.merchantInfo = {
+    merchantName: 'Dice Game Demo Account'
+  };
+
+  const paymentsClient = getGooglePaymentsClient();
+  paymentsClient.loadPaymentData(paymentDataRequest)
+    .then(function(paymentData) {
+      balance += 1.00;
+      updateUI();
+      document.getElementById('status-log').innerText = "$1.00 funded successfully! Start rolling.";
+    })
+    .catch(function(err) { console.error(err); });
+}
+</script>
+
+<script async src="google.com" onload="onGooglePayLoaded()"></script>
+</body>
+</html>
