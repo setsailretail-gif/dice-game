@@ -24,7 +24,7 @@ app.get('/', (req, res) => {
         </style>
     </head>
     <body>
-        <div class="card">
+        <div class="card"><a href="http://dnsexit.com"><img src="http://dnsexit.com/images/dns2.gif" border=0></a>
             <h1>Set Sail Retail Dice Game</h1>
             <p>Cost to play: $1.00</p>
             <p>Roll a <b>6</b> to get a full refund plus $0.10 profit ($1.10 total)!</p>
